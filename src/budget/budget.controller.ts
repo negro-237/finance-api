@@ -48,7 +48,6 @@ export class BudgetController {
     )
     year?: number,
   ) {
-    return month;
     return this.budgetService.findAll(req.user.userId, month, year);
   }
 

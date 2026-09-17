@@ -30,8 +30,11 @@ export class DashboardService {
     const startOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
     /*
-     * 1. Récupérer les comptes
+     * ============================================================
+     * 1. RÉCUPÉRER LES COMPTES
+     * ============================================================
      */
+
     const accounts = await this.prisma.account.findMany({
       where: {
         userId,
@@ -43,16 +46,22 @@ export class DashboardService {
     });
 
     /*
-     * 2. Calculer le solde total
+     * ============================================================
+     * 2. CALCULER LE SOLDE TOTAL
+     * ============================================================
      */
+
     const totalBalance = accounts.reduce(
       (total, account) => total.add(account.balance),
       new Prisma.Decimal(0),
     );
 
     /*
-     * 3. Revenus du mois
+     * ============================================================
+     * 3. REVENUS DU MOIS
+     * ============================================================
      */
+
     const monthlyIncome = await this.prisma.transaction.aggregate({
       where: {
         userId,
@@ -68,8 +77,11 @@ export class DashboardService {
     });
 
     /*
-     * 4. Dépenses du mois
+     * ============================================================
+     * 4. DÉPENSES DU MOIS
+     * ============================================================
      */
+
     const monthlyExpense = await this.prisma.transaction.aggregate({
       where: {
         userId,
@@ -95,8 +107,11 @@ export class DashboardService {
       : new Prisma.Decimal(0);
 
     /*
-     * 5. Dépenses par catégorie
+     * ============================================================
+     * 5. DÉPENSES PAR CATÉGORIE
+     * ============================================================
      */
+
     const expensesByCategory = await this.prisma.transaction.groupBy({
       by: ['categoryId'],
       where: {
@@ -116,6 +131,12 @@ export class DashboardService {
         },
       },
     });
+
+    /*
+     * ============================================================
+     * 6. BUDGETS DU MOIS
+     * ============================================================
+     */
 
     const budgets = await this.prisma.budget.findMany({
       where: {
@@ -189,8 +210,11 @@ export class DashboardService {
         color: budget.category.color,
 
         budget: this.decimalToNumber(budget.amount),
+
         spent: this.decimalToNumber(spent),
+
         remaining: this.decimalToNumber(remaining),
+
         percentage: this.decimalToNumber(percentage),
 
         status,
@@ -198,8 +222,11 @@ export class DashboardService {
     });
 
     /*
-     * Récupérer les informations des catégories
+     * ============================================================
+     * 7. INFORMATIONS DES CATÉGORIES
+     * ============================================================
      */
+
     const categoryIds = expensesByCategory.map((item) => item.categoryId);
 
     const categories = await this.prisma.category.findMany({
@@ -219,16 +246,23 @@ export class DashboardService {
 
       return {
         categoryId: item.categoryId,
+
         categoryName: category?.name ?? 'Unknown',
+
         icon: category?.icon ?? null,
+
         color: category?.color ?? null,
+
         amount: item._sum.amount ?? new Prisma.Decimal(0),
       };
     });
 
     /*
-     * 6. Dernières transactions
+     * ============================================================
+     * 8. DERNIÈRES TRANSACTIONS
+     * ============================================================
      */
+
     const recentTransactions = await this.prisma.transaction.findMany({
       where: {
         userId,
@@ -244,47 +278,147 @@ export class DashboardService {
     });
 
     /*
-     * 7. Evolution des 6 derniers mois
+     * ============================================================
+     * 9. DERNIERS VIREMENTS
+     * ============================================================
+     *
+     * IMPORTANT :
+     * Les virements sont récupérés depuis la table Transfer.
+     *
+     * Ils ne sont donc PAS considérés comme des revenus
+     * ou des dépenses.
      */
+
+    const recentTransfers = await this.prisma.transfer.findMany({
+      where: {
+        userId,
+      },
+      include: {
+        sourceAccount: true,
+        destinationAccount: true,
+      },
+      orderBy: {
+        date: 'desc',
+      },
+      take: 5,
+    });
+
+    /*
+     * ============================================================
+     * 10. ÉVOLUTION DES 6 DERNIERS MOIS
+     * ============================================================
+     */
+
     const monthlyOverview = await this.getMonthlyOverview(userId);
 
     /*
-     * 8. Retourner le Dashboard
+     * ============================================================
+     * 11. RETOURNER LE DASHBOARD
+     * ============================================================
      */
+
     return {
       summary: {
         totalBalance: this.decimalToNumber(totalBalance),
+
         monthlyIncome: this.decimalToNumber(income),
+
         monthlyExpense: this.decimalToNumber(expense),
+
         monthlySavings: this.decimalToNumber(savings),
+
         monthlySavingsPercentage: this.decimalToNumber(savingsPercentage),
       },
+
+      /*
+       * ----------------------------------------------------------
+       * COMPTES
+       * ----------------------------------------------------------
+       */
 
       accounts: accounts.map((account) => ({
         ...account,
         balance: this.decimalToNumber(account.balance),
       })),
 
+      /*
+       * ----------------------------------------------------------
+       * DÉPENSES PAR CATÉGORIE
+       * ----------------------------------------------------------
+       */
+
       expensesByCategory: formattedExpensesByCategory.map((item) => ({
         ...item,
         amount: this.decimalToNumber(item.amount),
       })),
 
+      /*
+       * ----------------------------------------------------------
+       * BUDGETS
+       * ----------------------------------------------------------
+       */
+
       budgets: formattedBudgets,
+
+      /*
+       * ----------------------------------------------------------
+       * ÉVOLUTION MENSUELLE
+       * ----------------------------------------------------------
+       */
 
       monthlyOverview: monthlyOverview.map((month) => ({
         ...month,
+
         income: this.decimalToNumber(month.income),
+
         expense: this.decimalToNumber(month.expense),
+
         savings: this.decimalToNumber(month.savings),
       })),
 
+      /*
+       * ----------------------------------------------------------
+       * TRANSACTIONS RÉCENTES
+       * ----------------------------------------------------------
+       */
+
       recentTransactions: recentTransactions.map((transaction) => ({
         ...transaction,
+
         amount: this.decimalToNumber(transaction.amount),
+      })),
+
+      /*
+       * ----------------------------------------------------------
+       * VIREMENTS RÉCENTS
+       * ----------------------------------------------------------
+       */
+
+      recentTransfers: recentTransfers.map((transfer) => ({
+        ...transfer,
+
+        amount: this.decimalToNumber(transfer.amount),
+
+        sourceAccount: {
+          ...transfer.sourceAccount,
+
+          balance: this.decimalToNumber(transfer.sourceAccount.balance),
+        },
+
+        destinationAccount: {
+          ...transfer.destinationAccount,
+
+          balance: this.decimalToNumber(transfer.destinationAccount.balance),
+        },
       })),
     };
   }
+
+  /*
+   * ============================================================
+   * ÉVOLUTION DES 6 DERNIERS MOIS
+   * ============================================================
+   */
 
   private async getMonthlyOverview(userId: number): Promise<MonthlyOverview[]> {
     const months: MonthlyOverview[] = [];
@@ -294,6 +428,7 @@ export class DashboardService {
     /*
      * Les 6 derniers mois
      */
+
     for (let i = 5; i >= 0; i--) {
       const start = new Date(now.getFullYear(), now.getMonth() - i, 1);
 
@@ -335,9 +470,11 @@ export class DashboardService {
 
       months.push({
         year: start.getFullYear(),
+
         month: start.getMonth() + 1,
 
         income: monthlyIncome,
+
         expense: monthlyExpense,
 
         savings: monthlyIncome.sub(monthlyExpense),
@@ -346,6 +483,12 @@ export class DashboardService {
 
     return months;
   }
+
+  /*
+   * ============================================================
+   * DECIMAL -> NUMBER
+   * ============================================================
+   */
 
   private decimalToNumber(value: Prisma.Decimal): number {
     return Number(value.toString());

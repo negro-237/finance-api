@@ -17,12 +17,11 @@ export class BudgetService {
    * Créer un budget
    */
   async create(userId: number, dto: CreateBudgetDto) {
-    console.log('id', userId);
     // Vérifier que la catégorie appartient à l'utilisateur
     const category = await this.prisma.category.findFirst({
       where: {
         id: dto.categoryId,
-        userId,
+        OR: [{ userId }, { userId: null }],
       },
     });
 
