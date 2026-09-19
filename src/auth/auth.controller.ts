@@ -53,7 +53,7 @@ export class AuthController {
   @Get('me')
   @UseGuards(JwtAuthGuard)
   getMe(@Req() req: any) {
-    return req.user;
+    return req.user.userId;
   }
 
   @Post('logout')
