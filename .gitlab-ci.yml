@@ -1,0 +1,44 @@
+stages:
+  - deploy
+
+variables:
+  DEPLOY_PATH: /home/admin/web/finance.negro-services.com/public_html
+  SSH_USER: admin
+  SSH_HOST: 180.149.199.229
+  SSH_PORT: 5804
+
+before_script:
+  - eval $(ssh-agent -s)
+  - mkdir -p ~/.ssh
+  - chmod 700 ~/.ssh
+  - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+  - ssh-keyscan -p $SSH_PORT -H $SSH_HOST >> ~/.ssh/known_hosts
+  - chmod 644 ~/.ssh/known_hosts
+
+deploy_production:
+  stage: deploy
+
+  script:
+    # 1. Pull du code
+    - ssh -p $SSH_PORT $SSH_USER@$SSH_HOST "cd $DEPLOY_PATH && git pull origin main"
+
+    # 2. Installation des dépendances
+    - ssh -p $SSH_PORT $SSH_USER@$SSH_HOST "cd $DEPLOY_PATH && npm ci"
+
+    # 3. Génération Prisma
+    - ssh -p $SSH_PORT $SSH_USER@$SSH_HOST "cd $DEPLOY_PATH && npx prisma generate"
+
+    # 4. Migrations Prisma
+    - ssh -p $SSH_PORT $SSH_USER@$SSH_HOST "cd $DEPLOY_PATH && npx prisma migrate deploy"
+
+    # 5. Build NestJS
+    - ssh -p $SSH_PORT $SSH_USER@$SSH_HOST "cd $DEPLOY_PATH && npm run build"
+
+    # 6. Redémarrage de l'API avec PM2
+    - ssh -p $SSH_PORT $SSH_USER@$SSH_HOST "cd $DEPLOY_PATH && pm2 restart finance-api || pm2 start dist/main.js --name finance-api"
+
+    # 7. Sauvegarde de la configuration PM2
+    - ssh -p $SSH_PORT $SSH_USER@$SSH_HOST "pm2 save"
+
+  only:
+    - main
