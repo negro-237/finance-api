@@ -38,7 +38,7 @@ deploy_production:
     - ssh -p $SSH_PORT $SSH_USER@$SSH_HOST "cd $DEPLOY_PATH && pm2 restart finance-api || pm2 start dist/main.js --name finance-api"
 
     # 7. Sauvegarde de la configuration PM2
-    - ssh -p $SSH_PORT $SSH_USER@$SSH_HOST "pm2 save"
+    #- ssh -p $SSH_PORT $SSH_USER@$SSH_HOST "pm2 save"
 
   only:
     - main
