@@ -1,11 +1,11 @@
 -- DropForeignKey
-ALTER TABLE `category` DROP FOREIGN KEY `Category_userId_fkey`;
+ALTER TABLE `Category` DROP FOREIGN KEY `Category_userId_fkey`;
 
 -- DropIndex
-DROP INDEX `Category_userId_name_key` ON `category`;
+DROP INDEX `Category_userId_name_key` ON `Category`;
 
 -- AlterTable
-ALTER TABLE `category` ADD COLUMN `isActive` BOOLEAN NOT NULL DEFAULT true,
+ALTER TABLE `Category` ADD COLUMN `isActive` BOOLEAN NOT NULL DEFAULT true,
     MODIFY `userId` INTEGER NULL;
 
 -- CreateIndex

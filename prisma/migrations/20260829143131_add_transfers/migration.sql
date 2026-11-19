@@ -1,14 +1,14 @@
 /*
   Warnings:
 
-  - Made the column `categoryId` on table `transaction` required. This step will fail if there are existing NULL values in that column.
+  - Made the column `categoryId` on table `Transaction` required. This step will fail if there are existing NULL values in that column.
 
 */
 -- DropForeignKey
-ALTER TABLE `transaction` DROP FOREIGN KEY `Transaction_categoryId_fkey`;
+ALTER TABLE `Transaction` DROP FOREIGN KEY `Transaction_categoryId_fkey`;
 
 -- AlterTable
-ALTER TABLE `transaction` MODIFY `categoryId` INTEGER NOT NULL;
+ALTER TABLE `Transaction` MODIFY `categoryId` INTEGER NOT NULL;
 
 -- CreateTable
 CREATE TABLE `Transfer` (
