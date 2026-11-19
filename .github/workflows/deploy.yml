@@ -1,0 +1,54 @@
+name: Déployer l’API en production
+
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: finance-api-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Déployer via SSH
+        shell: bash
+        env:
+          DEPLOY_PATH: /home/admin/web/finance.negro-services.com/public_html
+          DEPLOY_REPOSITORY: https://github.com/negro-237/finance-api.git
+          SSH_HOST: 180.149.199.229
+          SSH_PORT: '5804'
+          SSH_USER: admin
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          : "${SSH_PRIVATE_KEY:?Le secret SSH_PRIVATE_KEY est requis}"
+          : "${SSH_KNOWN_HOSTS:?Le secret SSH_KNOWN_HOSTS est requis}"
+
+          umask 077
+          ssh_dir="$(mktemp -d)"
+          trap 'rm -rf -- "$ssh_dir"' EXIT
+          printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > "$ssh_dir/key"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" | tr -d '\r' > "$ssh_dir/known_hosts"
+
+          ssh -p "$SSH_PORT" -i "$ssh_dir/key" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$ssh_dir/known_hosts" \
+            "$SSH_USER@$SSH_HOST" "bash -se -- '$DEPLOY_PATH' '$DEPLOY_REPOSITORY'" <<'DEPLOY'
+          cd "$1"
+          if [ "$(git branch --show-current)" != main ]; then
+            echo "Le dépôt de production doit être sur la branche main." >&2
+            exit 1
+          fi
+          GIT_TERMINAL_PROMPT=0 git pull --ff-only "$2" main
+          npm ci --include=dev
+          npx prisma generate
+          npm run build
+          test -f dist/src/main.js
+          npx prisma migrate deploy
+          pm2 restart finance-api || pm2 start dist/src/main.js --name finance-api
+          DEPLOY
