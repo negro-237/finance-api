@@ -51,5 +51,45 @@ jobs:
           npm run build
           test -f dist/src/main.js
           npx prisma migrate deploy
-          pm2 restart finance-api || pm2 start dist/src/main.js --name finance-api
+
+          umask 077
+          state_dir="$HOME/.local/state/finance-api"
+          mkdir -p "$state_dir"
+          pid_file="$state_dir/server.pid"
+          log_file="$state_dir/server.log"
+          entrypoint="$PWD/dist/src/main.js"
+
+          is_api_process() {
+            local pid="$1"
+            local -a args=()
+            [[ "$pid" =~ ^[1-9][0-9]*$ ]] &&
+              mapfile -d '' -t args 2>/dev/null < "/proc/$pid/cmdline" &&
+              [[ "${args[0]}" == node && "${args[1]}" == "$entrypoint" ]]
+          }
+
+          if [ -f "$pid_file" ] && read -r old_pid < "$pid_file" && is_api_process "$old_pid"; then
+            kill -TERM "$old_pid"
+            for ((attempt=0; attempt<15; attempt++)); do
+              is_api_process "$old_pid" || break
+              sleep 1
+            done
+            if is_api_process "$old_pid"; then
+              echo "L’ancienne instance de l’API ne s’est pas arrêtée (PID $old_pid)." >&2
+              exit 1
+            fi
+          fi
+
+          nohup node "$entrypoint" </dev/null > "$log_file" 2>&1 &
+          pid=$!
+          printf '%s\n' "$pid" > "$pid_file"
+          for ((attempt=0; attempt<30; attempt++)); do
+            kill -0 "$pid" 2>/dev/null || break
+            if grep -Fq 'Finance API running on http://localhost:' "$log_file"; then
+              echo "API démarrée (PID $pid)."
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Le démarrage de l’API n’a pas été confirmé. Consultez $log_file sur le serveur." >&2
+          exit 1
           DEPLOY
