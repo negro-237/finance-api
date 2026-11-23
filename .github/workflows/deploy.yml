@@ -45,6 +45,13 @@ jobs:
             echo "Le dépôt de production doit être sur la branche main." >&2
             exit 1
           fi
+          npm_global_prefix="$(npm prefix -g)"
+          export PATH="$PATH:$npm_global_prefix/bin:$HOME/.local/bin"
+          if ! command -v pm2 >/dev/null 2>&1; then
+            echo "PM2 est introuvable dans la session SSH de $USER." >&2
+            exit 1
+          fi
+
           GIT_TERMINAL_PROMPT=0 git pull --ff-only "$2" main
           npm ci --include=dev
           npx prisma generate
@@ -52,11 +59,8 @@ jobs:
           test -f dist/src/main.js
           npx prisma migrate deploy
 
-          umask 077
-          state_dir="$HOME/.local/state/finance-api"
-          mkdir -p "$state_dir"
-          pid_file="$state_dir/server.pid"
-          log_file="$state_dir/server.log"
+          # Arrêter l’instance lancée par l’ancien workflow avant de passer à PM2.
+          pid_file="$HOME/.local/state/finance-api/server.pid"
           entrypoint="$PWD/dist/src/main.js"
 
           is_api_process() {
@@ -78,18 +82,35 @@ jobs:
               exit 1
             fi
           fi
+          rm -f -- "$pid_file"
 
-          nohup node "$entrypoint" </dev/null > "$log_file" 2>&1 &
-          pid=$!
-          printf '%s\n' "$pid" > "$pid_file"
-          for ((attempt=0; attempt<30; attempt++)); do
-            kill -0 "$pid" 2>/dev/null || break
-            if grep -Fq 'Finance API running on http://localhost:' "$log_file"; then
-              echo "API démarrée (PID $pid)."
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "Le démarrage de l’API n’a pas été confirmé. Consultez $log_file sur le serveur." >&2
-          exit 1
+          if pm2 describe finance-api >/dev/null 2>&1; then
+            pm2 restart finance-api --update-env
+          else
+            pm2 start "$entrypoint" --name finance-api --cwd "$PWD"
+          fi
+
+          # Vérifier que NestJS répond sur le port configuré.
+          if ! node -r dotenv/config <<'CHECK_API'
+          const { setTimeout: delay } = require('node:timers/promises');
+          const port = Number(process.env.PORT ?? 3000);
+
+          async function checkApi() {
+            for (let attempt = 0; attempt < 30; attempt++) {
+              const response = await fetch(`http://127.0.0.1:${port}/docs/`, {
+                signal: AbortSignal.timeout(1000),
+              }).catch(() => null);
+              if (response?.ok) return;
+              await delay(1000);
+            }
+            process.exitCode = 1;
+          }
+
+          checkApi();
+          CHECK_API
+          then
+            echo 'L’API ne répond pas. Consultez pm2 logs finance-api sur le serveur.' >&2
+            exit 1
+          fi
+          echo 'L’API répond sous PM2.'
           DEPLOY
